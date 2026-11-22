@@ -1,12 +1,12 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { api } from "../api/client";
+import { SearchBar } from "../components/SearchBar";
 import { titleCase } from "../lib/format";
 import type { Category } from "../types";
 
 export function AppLayout() {
   const navigate = useNavigate();
-  const [query, setQuery] = useState("");
   const [categories, setCategories] = useState<Category[]>([]);
 
   useEffect(() => {
@@ -16,13 +16,10 @@ export function AppLayout() {
       .catch(() => setCategories([]));
   }, []);
 
-  function onSearch(event: FormEvent) {
-    event.preventDefault();
-    const term = query.trim();
-    if (!term) {
-      return;
+  function onSearch(term: string) {
+    if (term) {
+      navigate(`/search?q=${encodeURIComponent(term)}`);
     }
-    navigate(`/search?q=${encodeURIComponent(term)}`);
   }
 
   return (
@@ -32,18 +29,7 @@ export function AppLayout() {
           <Link className="brand" to="/">
             Field &amp; Co.
           </Link>
-          <form className="search-bar" onSubmit={onSearch} role="search">
-            <label className="sr-only" htmlFor="header-search">
-              Search products
-            </label>
-            <input
-              id="header-search"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search products"
-            />
-            <button type="submit">Search</button>
-          </form>
+          <SearchBar id="header-search" onSearch={onSearch} />
         </div>
         <nav className="category-nav" aria-label="Product categories">
           <NavLink to="/" end>

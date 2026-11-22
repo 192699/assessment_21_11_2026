@@ -1,10 +1,14 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createApp } from "../app";
 import { loadConfig } from "../config";
 import type { Product } from "../domain/product";
-import type { EmailSender, SalesEnquiryEmail } from "../ports/email-sender";
-import type { ProductCatalogue } from "../ports/product-catalogue";
+import {
+  EmailDeliveryError,
+  type EmailSender,
+  type SalesEnquiryEmail,
+} from "../ports/email-sender";
+import { CatalogueUnavailableError, type ProductCatalogue } from "../ports/product-catalogue";
 
 const products: Product[] = [
   {
@@ -49,7 +53,7 @@ class MemoryEmail implements EmailSender {
   }
 }
 
-function testApp(email = new MemoryEmail()) {
+function testApp<E extends EmailSender = MemoryEmail>(email: E = new MemoryEmail() as unknown as E) {
   const app = createApp({
     config: loadConfig({
       FEATURED_COUNT: "5",
@@ -122,6 +126,99 @@ describe("HTTP critical path", () => {
     });
 
     expect(response.status).toBe(400);
+    expect(response.body.error).toBe("Validation failed");
     expect(email.sent).toHaveLength(0);
+  });
+});
+
+describe("HTTP error handling", () => {
+  const validEnquiry = {
+    productId: "11",
+    name: "Alex Buyer",
+    email: "alex@example.com",
+    message: "Can you supply ten units next month?",
+  };
+
+  it("rejects an empty search term", async () => {
+    const { app } = testApp();
+    const response = await request(app).get("/api/products/search").query({ q: "  " });
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 404 for an unknown category or product", async () => {
+    const { app } = testApp();
+    expect((await request(app).get("/api/categories/garden")).status).toBe(404);
+    expect((await request(app).get("/api/products/999")).status).toBe(404);
+  });
+
+  it("returns 404 when enquiring about an unknown product", async () => {
+    const { app, email } = testApp();
+    const response = await request(app)
+      .post("/api/enquiries")
+      .send({ ...validEnquiry, productId: "999" });
+    expect(response.status).toBe(404);
+    expect(email.sent).toHaveLength(0);
+  });
+
+  it("returns 400 for a malformed JSON body", async () => {
+    const { app } = testApp();
+    const response = await request(app)
+      .post("/api/enquiries")
+      .set("Content-Type", "application/json")
+      .send("{not json");
+    expect(response.status).toBe(400);
+  });
+
+  it("returns 503 when the product source is unavailable", async () => {
+    const app = createApp({
+      config: loadConfig({}),
+      catalogue: {
+        listProducts: async () => {
+          throw new CatalogueUnavailableError("down");
+        },
+        getProduct: async () => null,
+        listCategories: async () => [],
+      },
+      emailSender: new MemoryEmail(),
+    });
+    const response = await request(app).get("/api/catalogue/featured");
+    expect(response.status).toBe(503);
+    expect(response.body.error).not.toContain("down");
+  });
+
+  it("returns 502 with a friendly message when email delivery fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const failing: EmailSender = {
+      send: async () => {
+        throw new EmailDeliveryError("ECONNREFUSED");
+      },
+    };
+    const { app } = testApp(failing);
+    const response = await request(app).post("/api/enquiries").send(validEnquiry);
+    expect(response.status).toBe(502);
+    expect(response.body.error).toMatch(/could not send your enquiry/i);
+  });
+
+  it("rate limits repeated enquiries from one client", async () => {
+    const email = new MemoryEmail();
+    const app = createApp({
+      config: loadConfig({}),
+      catalogue: new MemoryCatalogue(),
+      emailSender: email,
+      enquiryRateLimit: { windowMs: 60_000, max: 2 },
+    });
+
+    const statuses = [];
+    for (let i = 0; i < 3; i += 1) {
+      statuses.push((await request(app).post("/api/enquiries").send(validEnquiry)).status);
+    }
+    expect(statuses).toEqual([201, 201, 429]);
+    expect(email.sent).toHaveLength(2);
+  });
+});
+
+describe("config", () => {
+  it("fails fast on a non-numeric count", () => {
+    expect(() => loadConfig({ FEATURED_COUNT: "five" })).toThrow(/FEATURED_COUNT/);
   });
 });

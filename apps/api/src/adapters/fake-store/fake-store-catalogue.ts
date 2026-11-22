@@ -3,7 +3,10 @@ import {
   type Category,
   type Product,
 } from "../../domain/product";
-import type { ProductCatalogue } from "../../ports/product-catalogue";
+import {
+  CatalogueUnavailableError,
+  type ProductCatalogue,
+} from "../../ports/product-catalogue";
 
 type FakeStoreProduct = {
   id: number;
@@ -14,13 +17,6 @@ type FakeStoreProduct = {
   image: string;
   rating?: { rate: number; count: number };
 };
-
-export class UpstreamUnavailableError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UpstreamUnavailableError";
-  }
-}
 
 export class FakeStoreCatalogue implements ProductCatalogue {
   private cache:
@@ -63,19 +59,22 @@ export class FakeStoreCatalogue implements ProductCatalogue {
     const response = await this.fetchFn(`${this.baseUrl}/products`, {
       signal: AbortSignal.timeout(8000),
     }).catch((error: unknown) => {
-      throw new UpstreamUnavailableError(
+      throw new CatalogueUnavailableError(
         error instanceof Error ? error.message : "Product source request failed"
       );
     });
 
     if (!response.ok) {
-      throw new UpstreamUnavailableError(
+      throw new CatalogueUnavailableError(
         `Product source returned ${response.status}`
       );
     }
 
-    const payload = (await response.json()) as FakeStoreProduct[];
-    const products = payload.map(mapFakeStoreProduct);
+    const payload: unknown = await response.json().catch(() => null);
+    if (!Array.isArray(payload)) {
+      throw new CatalogueUnavailableError("Product source returned an unexpected payload");
+    }
+    const products = (payload as FakeStoreProduct[]).map(mapFakeStoreProduct);
     this.cache = { products, expiresAt: now + this.ttlMs };
     return products;
   }

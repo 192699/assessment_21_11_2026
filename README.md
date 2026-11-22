@@ -52,11 +52,18 @@ cd apps/api && npm test
 cd apps/web && npm test
 ```
 
-From root (after installing root and workspace dependencies):
+From root (after installing dependencies in both apps):
 
 ```bash
 npm test
 ```
+
+What is covered:
+
+- **API (`apps/api`)** — ranking/search pure functions, the Fake Store adapter (mapping, caching, upstream failures), the enquiry service (email content, HTML escaping), and every HTTP route including 400/404/429/502/503 paths. Tests use in-memory port implementations, so they need no network or SMTP.
+- **Web (`apps/web`)** — `App.test.tsx` walks each acceptance criterion (home, category, search button, product tile, enquiry → thank you, enquiry failure) through the real router and pages with only `fetch` stubbed, plus component tests.
+
+CI (`.github/workflows/ci.yml`) runs build + tests for both apps and `docker compose build` on every PR.
 
 ## What you should see
 

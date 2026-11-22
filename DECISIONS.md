@@ -15,14 +15,15 @@ React (TypeScript) + Node.js (TypeScript). Web is the fastest client that a revi
 7. **Store name** "Field & Co." is a placeholder. Look and feel is intentionally tokenised in CSS so a later brand pass can replace type, colour, and copy.
 8. **Currency** is USD because that is what Fake Store returns. Formatting uses `en-GB` only for display conventions.
 9. **No persistence of enquiries.** Email is the MVP system of record. A database table can sit beside the mail send later.
-10. Reviewers have **outbound HTTPS** so the API can reach fakestoreapi.com and the browser can load product images.
+10. **Enquiry abuse:** the enquiry endpoint sends email, so it is rate limited per IP (5 per minute, in memory). One API instance is assumed; with several, the limit moves to a shared store or the edge (API Gateway / WAF).
+11. Reviewers have **outbound HTTPS** so the API can reach fakestoreapi.com and the browser can load product images.
 
 ## Dropped or simplified
 
 - **No mobile client.** Setup time and review friction would have eaten the time-box.
 - **No real email provider.** Paid accounts are disallowed; Mailpit proves the email port.
 - **No auth, cart, CMS, or admin.** Out of scope for the acceptance criteria.
-- **No Playwright/Cypress.** HTTP tests cover the enquiry/search/category path on the API; component tests cover search submit, tile navigation, and enquiry validation. An E2E pass would be the next testing investment.
+- **No Playwright/Cypress.** Instead: API HTTP tests (supertest, in-memory ports) for every route and error path; adapter tests with a stubbed `fetch`; and a web `App.test.tsx` that walks each acceptance criterion through the real router and pages with only `fetch` stubbed. A browser E2E against Docker + Mailpit would be the next testing investment.
 - **No shared package of types.** API and web duplicate the product DTO. Acceptable at this size; extract if a second client appears.
 
 ## How this grows past the PoC
@@ -41,6 +42,16 @@ Web (React)                API (Express)
 - Deploy on AWS with the same containers: web (S3+CloudFront or ECS), API (ECS/Fargate), mail (SES), config in SSM/Secrets Manager.
 
 In-memory product cache (TTL) is already behind the adapter so a slower source does not block every page.
+
+Failure modes are part of the port contracts, not the adapters: `CatalogueUnavailableError` (→ 503) and `EmailDeliveryError` (→ 502) live in `apps/api/src/ports`, so the HTTP layer maps them without importing Fake Store or nodemailer, and a new adapter only has to throw the same errors.
+
+## Security and error-handling basics
+
+- All input validated with zod at the HTTP edge; malformed JSON → 400, body over 32 kB → 413.
+- Customer input is HTML-escaped before it goes into the sales email.
+- Enquiry endpoint rate limited; `nosniff`, `no-referrer`, `X-Frame-Options: DENY` headers; `x-powered-by` off; CORS restricted to the web origin.
+- Upstream and SMTP error details are logged server-side, never returned to the browser.
+- Config is validated at boot (a non-numeric `FEATURED_COUNT` stops the API rather than silently featuring `NaN` products).
 
 ## Next day
 

@@ -7,6 +7,7 @@ export function useAsync<T>(key: string, loader: () => Promise<T>) {
 
   useEffect(() => {
     let cancelled = false;
+    setData(null);
     setLoading(true);
     setError(null);
 
