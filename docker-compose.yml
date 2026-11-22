@@ -1,0 +1,41 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      WEB_ORIGIN: http://localhost:8080
+      PRODUCT_SOURCE_URL: https://fakestoreapi.com
+      PRODUCT_CACHE_TTL_MS: 300000
+      FEATURED_COUNT: 5
+      CATEGORY_FEATURED_COUNT: 3
+      SMTP_HOST: mailpit
+      SMTP_PORT: 1025
+      SALES_INBOX: sales@example.com
+      FROM_EMAIL: catalogue@example.com
+      EMAIL_PROVIDER: smtp
+    ports:
+      - "3001:3001"
+    depends_on:
+      - mailpit
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3001/api/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports:
+      - "8025:8025"
+      - "1025:1025"

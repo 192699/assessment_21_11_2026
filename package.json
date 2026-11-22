@@ -1,0 +1,19 @@
+{
+  "name": "product-catalogue",
+  "private": true,
+  "description": "MVP product catalogue: React web client + Node.js API",
+  "scripts": {
+    "dev:api": "npm --prefix apps/api run dev",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev:api\" \"npm run dev:web\"",
+    "test": "npm --prefix apps/api test && npm --prefix apps/web test",
+    "test:api": "npm --prefix apps/api test",
+    "test:web": "npm --prefix apps/web test"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
